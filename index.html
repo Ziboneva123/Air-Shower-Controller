@@ -15,12 +15,71 @@ pre{background:#101820;color:#eaf2f8;padding:15px;border-radius:8px;overflow:aut
 .warn{background:#fff4d6;padding:12px;border-left:5px solid #e0a000}
 .danger{background:#ffe4e4;padding:12px;border-left:5px solid #c62828}
 .flow{font-weight:bold;background:#eef7ff;padding:14px;border-radius:8px}
-</style></head><body>
-<header><h1>INTELLIGENT AIR SHOWER CONTROLLER V4.7</h1>
+</style>
+<style>
+.air-header {
+  text-align: center !important;
+}
+
+.creator-name {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.4px;
+
+  background: linear-gradient(
+    90deg,
+    #ffffff 0%,
+    #ffffff 35%,
+    #8fd3ff 50%,
+    #ffffff 65%,
+    #ffffff 100%
+  );
+  background-size: 220% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+
+  animation:
+    creatorShimmer 3s linear infinite,
+    creatorGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes creatorShimmer {
+  0% {
+    background-position: 220% center;
+  }
+  100% {
+    background-position: -20% center;
+  }
+}
+
+@keyframes creatorGlow {
+  from {
+    filter: drop-shadow(0 0 1px rgba(255,255,255,0.25));
+  }
+  to {
+    filter: drop-shadow(0 0 7px rgba(143,211,255,0.85));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creator-name {
+    animation: none;
+    color: #ffffff;
+  }
+}
+</style>
+
+</head><body>
+<header class="air-header"><h1>INTELLIGENT AIR SHOWER CONTROLLER V4.7</h1>
 Arduino Mega 2560 • Sensor 12V • Relay 12V Active HIGH
-<div style="margin-top:6px;font-size:13px;color:#dbeafe;">
-  Created by : <strong>Nugroho Kunto Aji</strong>
-</div></header>
+
+<div class="creator-name">
+  Created by : Nugroho Kunto Aji
+</div>
+</header>
 <main>
 <div class="card"><h2>1. Fungsi Sistem</h2>
 <p>Controller mengatur interlock dua pintu, deteksi orang, blower, lighting, buzzer, E-Stop dan alarm.</p>
