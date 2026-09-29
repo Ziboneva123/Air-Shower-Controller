@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Intelligent Air Shower Controller V4.7</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f3f6f8;color:#18232d;margin:0}
+header{background:#073b63;color:white;padding:24px}main{max-width:1100px;margin:auto;padding:16px}
+.card{background:white;margin:16px 0;padding:20px;border-radius:12px;box-shadow:0 2px 8px #0001}
+h1,h2{margin-top:0}h2{color:#073b63;border-bottom:2px solid #dce6ed;padding-bottom:8px}
+table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd6dd;padding:8px;text-align:left}th{background:#eaf2f8}
+pre{background:#101820;color:#eaf2f8;padding:15px;border-radius:8px;overflow:auto;font-size:12px}
+.warn{background:#fff4d6;padding:12px;border-left:5px solid #e0a000}
+.danger{background:#ffe4e4;padding:12px;border-left:5px solid #c62828}
+.flow{font-weight:bold;background:#eef7ff;padding:14px;border-radius:8px}
+</style></head><body>
+<header><h1>INTELLIGENT AIR SHOWER CONTROLLER V4.7</h1>
+Arduino Mega 2560 • Sensor 12V • Relay 12V Active HIGH</header>
+<main>
+<div class="card"><h2>1. Fungsi Sistem</h2>
+<p>Controller mengatur interlock dua pintu, deteksi orang, blower, lighting, buzzer, E-Stop dan alarm.</p>
+<div class="flow">Sensor 12V → Relay input 12V → kontak NO/COM → Arduino D30-D35 → Arduino D22-D26 → Relay output 12V → actuator</div>
+<div class="danger"><b>JANGAN MASUKKAN 12V KE PIN ARDUINO.</b> D30-D35 hanya menerima level 0/5V dari kontak relay/interface.</div></div>
+
+<div class="card"><h2>2. Tabel I/O</h2><table>
+<tr><th>Pin</th><th>Fungsi</th><th>Logika</th></tr>
+<tr><td>D30</td><td>Sensor 1</td><td>HIGH = person detected</td></tr>
+<tr><td>D31</td><td>Sensor 2</td><td>HIGH = person detected</td></tr>
+<tr><td>D32</td><td>Limit outer</td><td>HIGH = door closed</td></tr>
+<tr><td>D33</td><td>Limit inner</td><td>HIGH = door closed</td></tr>
+<tr><td>D34</td><td>E-Stop</td><td>HIGH = active</td></tr>
+<tr><td>D35</td><td>Reset</td><td>HIGH = pressed</td></tr>
+<tr><td>D22</td><td>Outer lock</td><td>HIGH = LOCK</td></tr>
+<tr><td>D23</td><td>Inner lock</td><td>HIGH = LOCK</td></tr>
+<tr><td>D24</td><td>Blower</td><td>HIGH = ON</td></tr>
+<tr><td>D25</td><td>Lighting</td><td>LOW = ON</td></tr>
+<tr><td>D26</td><td>Buzzer</td><td>LOW = ON</td></tr>
+</table></div>
+
+<div class="card"><h2>3. Sequence</h2><ol>
+<li>IDLE: kedua pintu dapat dibuka, blower OFF, lighting ON.</li>
+<li>Outer dibuka lebih dulu → inner LOCK.</li>
+<li>Inner dibuka lebih dulu → outer LOCK, tanpa shower.</li>
+<li>Sensor 1 mendeteksi orang → latch entry.</li>
+<li>Outer tertutup → kedua pintu LOCK, menunggu Sensor 2.</li>
+<li>Sensor 2 aktif → person latch → blower ON 20 detik.</li>
+<li>20 detik selesai → blower OFF, outer tetap LOCK, inner UNLOCK.</li>
+<li>Inner dibuka lalu ditutup → siklus selesai → IDLE.</li>
+</ol></div>
+
+<div class="card"><h2>4. Timer & Alarm</h2>
+<table><tr><th>Parameter</th><th>Nilai</th></tr>
+<tr><td>Shower</td><td>20 s</td></tr><tr><td>Entry timeout</td><td>15 s</td></tr>
+<tr><td>Door open timeout</td><td>30 s</td></tr><tr><td>After shower timeout</td><td>30 s</td></tr>
+<tr><td>Reset hold</td><td>1 s</td></tr></table>
+<p>Alarm: E-Stop aktif, pintu terbuka terlalu lama, Sensor 2 tidak aktif setelah entry, inner tidak dibuka setelah shower, atau inner tidak tertutup setelah exit.</p>
+<p>Saat alarm: blower OFF, kedua lock LOCK, buzzer ON, lighting OFF.</p></div>
+
+<div class="card"><h2>5. Wiring Interface</h2>
+<table><tr><th>Sisi</th><th>Hubungan</th></tr>
+<tr><td>Sensor 12V</td><td>+12V / 0V / OUT → input relay 12V</td></tr>
+<tr><td>Relay input</td><td>Kontak NO/COM → Arduino D30-D35 sebagai dry contact 0/5V</td></tr>
+<tr><td>Arduino output</td><td>D22-D26 → driver/relay input 12V Active HIGH</td></tr>
+<tr><td>Relay output</td><td>COM/NO/NC → beban sesuai tegangan dan rating aktual</td></tr>
+</table>
+<div class="warn">Gunakan driver transistor/MOSFET bila input relay output membutuhkan 12V dan tidak dapat dipicu langsung oleh 5V Arduino. Tegangan lock/blower/lampu harus mengikuti nameplate aktual.</div>
+</div>
+
+<div class="card"><h2>6. Source Code Arduino Mega V4.7</h2>
+<details open><summary><b>Buka/tutup coding</b></summary><pre><code>// INTELLIGENT AIR SHOWER CONTROLLER - ARDUINO MEGA 2560
+// SOFTWARE V4.7 FINAL FIXED
+//
+// INPUT: D30 Sensor1, D31 Sensor2, D32 OuterLimit, D33 InnerLimit,
+//        D34 E-Stop, D35 Reset
+// OUTPUT: D22 OuterLock, D23 InnerLock, D24 Blower,
+//         D25 Lighting, D26 Buzzer
+// INPUTS are 0/5V from relay dry contacts. NEVER connect 12V directly.
+
+enum State { IDLE, OUTER_DOOR_ACTIVE, INNER_DOOR_ACTIVE,
+             ENTRY_WAIT_PERSON, SHOWER, AFTER_SHOWER, EXIT_SHOWER, ALARM };
+
+const byte OUTER_LOCK=22, INNER_LOCK=23, BLOWER=24, LIGHT=25, BUZZER=26;
+const byte S1=30, S2=31, OUTER_LIMIT=32, INNER_LIMIT=33, ESTOP=34, RESET=35;
+
+const unsigned long SHOWER_TIME=20000UL;
+const unsigned long DOOR_TIMEOUT=30000UL;
+const unsigned long ENTRY_TIMEOUT=15000UL;
+const unsigned long AFTER_SHOWER_TIMEOUT=30000UL;
+const unsigned long RESET_HOLD=1000UL;
+
+State state=IDLE;
+bool sensor1,sensor2,outerClosed,innerClosed,eStop;
+bool entryDetected=false, personDetected=false;
+unsigned long stateStart=0, showerStart=0, afterShowerStart=0, resetStart=0;
+
+void lockOuter(){digitalWrite(OUTER_LOCK,HIGH);}
+void unlockOuter(){digitalWrite(OUTER_LOCK,LOW);}
+void lockInner(){digitalWrite(INNER_LOCK,HIGH);}
+void unlockInner(){digitalWrite(INNER_LOCK,LOW);}
+void blowerON(){digitalWrite(BLOWER,HIGH);}
+void blowerOFF(){digitalWrite(BLOWER,LOW);}
+void lightON(){digitalWrite(LIGHT,LOW);}
+void lightOFF(){digitalWrite(LIGHT,HIGH);}
+void buzzerON(){digitalWrite(BUZZER,LOW);}
+void buzzerOFF(){digitalWrite(BUZZER,HIGH);}
+
+void alarmNow(){
+  state=ALARM; stateStart=millis();
+  blowerOFF(); lockOuter(); lockInner(); lightOFF(); buzzerON();
+}
+
+void readInputs(){
+  sensor1=digitalRead(S1)==HIGH;
+  sensor2=digitalRead(S2)==HIGH;
+  outerClosed=digitalRead(OUTER_LIMIT)==HIGH;
+  innerClosed=digitalRead(INNER_LIMIT)==HIGH;
+  eStop=digitalRead(ESTOP)==HIGH;
+}
+
+bool resetCycle(){
+  if(personDetected){ alarmNow(); return false; }
+  entryDetected=false; personDetected=false;
+  blowerOFF(); buzzerOFF(); unlockOuter(); unlockInner(); lightON();
+  resetStart=0; state=IDLE; stateStart=millis(); return true;
+}
+
+void idleState(){
+  blowerOFF(); buzzerOFF(); lightON();
+  if(!outerClosed){ lockInner(); state=OUTER_DOOR_ACTIVE; stateStart=millis(); return; }
+  if(!innerClosed){ lockOuter(); state=INNER_DOOR_ACTIVE; stateStart=millis(); return; }
+  unlockOuter(); unlockInner();
+  if(sensor1){entryDetected=true; lockInner(); state=ENTRY_WAIT_PERSON; stateStart=millis();}
+}
+
+void outerState(){
+  lockInner(); unlockOuter();
+  if(millis()-stateStart&gt;=DOOR_TIMEOUT){alarmNow();return;}
+  if(outerClosed){
+    if(sensor1){entryDetected=true;lockInner();state=ENTRY_WAIT_PERSON;stateStart=millis();}
+    else state=IDLE;
+  }
+}
+
+void innerState(){
+  lockOuter(); unlockInner();
+  if(millis()-stateStart&gt;=DOOR_TIMEOUT){alarmNow();return;}
+  if(innerClosed) resetCycle();
+}
+
+void entryState(){
+  lockInner(); unlockOuter(); blowerOFF(); lightON();
+  if(!entryDetected){state=IDLE;return;}
+  if(sensor2){personDetected=true;showerStart=millis();blowerON();lockOuter();lockInner();state=SHOWER;stateStart=millis();return;}
+  if(millis()-stateStart&gt;=ENTRY_TIMEOUT) alarmNow();
+}
+
+void showerState(){
+  lockOuter(); lockInner(); blowerON(); lightON();
+  if(millis()-showerStart&gt;=SHOWER_TIME){
+    blowerOFF(); lockOuter(); unlockInner();
+    afterShowerStart=millis(); state=AFTER_SHOWER; stateStart=millis();
+  }
+}
+
+void afterShowerState(){
+  blowerOFF(); lockOuter(); unlockInner(); lightON();
+  if(!innerClosed){state=EXIT_SHOWER;stateStart=millis();return;}
+  if(millis()-afterShowerStart&gt;=AFTER_SHOWER_TIMEOUT) alarmNow();
+}
+
+void exitState(){
+  blowerOFF(); lockOuter(); unlockInner(); lightON();
+  if(millis()-stateStart&gt;=DOOR_TIMEOUT){alarmNow();return;}
+  if(innerClosed){personDetected=false;resetCycle();}
+}
+
+void alarmState(){
+  blowerOFF(); lockOuter(); lockInner(); lightOFF(); buzzerON();
+  if(!eStop &amp;&amp; outerClosed &amp;&amp; innerClosed &amp;&amp; !sensor2){
+    if(digitalRead(RESET)==HIGH){
+      if(resetStart==0) resetStart=millis();
+      if(millis()-resetStart&gt;=RESET_HOLD){
+        entryDetected=false;personDetected=false;buzzerOFF();
+        unlockOuter();unlockInner();lightON();
+        resetStart=0;state=IDLE;stateStart=millis();
+      }
+    } else resetStart=0;
+  } else resetStart=0;
+}
+
+void setup(){
+  pinMode(OUTER_LOCK,OUTPUT); pinMode(INNER_LOCK,OUTPUT);
+  pinMode(BLOWER,OUTPUT); pinMode(LIGHT,OUTPUT); pinMode(BUZZER,OUTPUT);
+  pinMode(S1,INPUT);pinMode(S2,INPUT);pinMode(OUTER_LIMIT,INPUT);
+  pinMode(INNER_LIMIT,INPUT);pinMode(ESTOP,INPUT);pinMode(RESET,INPUT);
+  unlockOuter();unlockInner();blowerOFF();lightON();buzzerOFF();
+  Serial.begin(9600); state=IDLE; stateStart=millis();
+}
+
+void loop(){
+  readInputs();
+  if(eStop &amp;&amp; state!=ALARM) alarmNow();
+  if(state==ENTRY_WAIT_PERSON &amp;&amp; sensor2){
+    personDetected=true; showerStart=millis(); blowerON(); lockOuter(); lockInner();
+    state=SHOWER; stateStart=millis();
+  }
+  switch(state){
+    case IDLE: idleState(); break;
+    case OUTER_DOOR_ACTIVE: outerState(); break;
+    case INNER_DOOR_ACTIVE: innerState(); break;
+    case ENTRY_WAIT_PERSON: entryState(); break;
+    case SHOWER: showerState(); break;
+    case AFTER_SHOWER: afterShowerState(); break;
+    case EXIT_SHOWER: exitState(); break;
+    case ALARM: alarmState(); break;
+  }
+}</code></pre></details></div>
+
+<div class="card"><h2>7. Catatan Keselamatan</h2>
+<ul>
+<li>12V sensor dan coil relay harus mempunyai supply/fuse yang sesuai.</li>
+<li>Jangan hubungkan 12V langsung ke Arduino Mega.</li>
+<li>Input Arduino harus mempunyai level LOW/HIGH yang pasti, tidak floating.</li>
+<li>Beban AC harus melalui relay/contactor yang ratingnya sesuai.</li>
+<li>E-Stop sebaiknya juga memutus actuator secara hardware/safety circuit.</li>
+<li>Lakukan FAT setelah wiring: semua sensor, interlock, blower 20s, timeout, E-Stop dan reset.</li>
+</ul></div>
+
+<div class="card"><h2>8. Identitas Dokumen</h2>
+<p><b>Project:</b> Intelligent Air Shower Controller<br>
+<b>Controller:</b> Arduino Mega 2560<br><b>Software:</b> V4.7 Final Fixed<br>
+<b>Interface:</b> Sensor 12V → Relay 12V → Arduino<br><b>Revision:</b> 1.0</p></div>
+</main></body></html>
